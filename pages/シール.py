@@ -9,48 +9,78 @@ import pdfplumber
 # --- シール/その他PDF処理関数 ---
 def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     """
-    PDFの全テキストを抽出し、既存のseal.xlsxの最初のシートに貼り付ける
+    seal.xlsxを読み込み、シートを2枚に分けてPDFデータを貼り付ける
+    - 貼り付け1 (1枚目のシート): テーブルデータ（小さい文字）
+    - 貼り付け2 (2枚目のシート): 全テキストデータ（大きい文字も含む）
     """
     # 既存のseal.xlsxを読み込む
     wb = load_workbook(existing_seal_path)
     
-    # 最初のシートを取得
-    ws = wb.worksheets[0]
+    # --- シートの準備 ---
     
-    # 既存のデータをクリア (1行目から最大行まで削除)
-    if ws.max_row > 0:
-        ws.delete_rows(1, ws.max_row)
+    # 1. 1枚目のシートを「貼り付け1」にリネーム
+    ws1 = wb.worksheets[0]
+    ws1.title = "貼り付け1"
+    
+    # 2. 2枚目のシート「貼り付け2」を作成（または取得）
+    if "貼り付け2" in wb.sheetnames:
+        ws2 = wb["貼り付け2"]
+    else:
+        # 2番目の位置 (index=1) にシートを作成
+        ws2 = wb.create_sheet(title="貼り付け2", index=1)
 
-    current_row = 1 # Excelに書き込む現在の行番号
+    # 3. 両方のシートの既存データをクリア
+    if ws1.max_row > 0:
+        ws1.delete_rows(1, ws1.max_row)
+    if ws2.max_row > 0:
+        ws2.delete_rows(1, ws2.max_row)
+
+    # --- PDFからのデータ抽出 ---
     
-    # --- ▼▼ ここからロジックを大幅に変更 ▼▼ ---
-    # extract_tables() の代わりに extract_text(layout=True) を使用
+    all_table_rows = [] # 貼り付け1用
+    all_text_lines = [] # 貼り付け2用
     
     with pdfplumber.open(pdf_bytes_io) as pdf:
         for page_number, page in enumerate(pdf.pages, 1):
             
-            # layout=True で、見た目のレイアウト（インデント等）を保持したままテキストを抽出
-            page_text = page.extract_text(layout=True)
+            # 【貼り付け1用】テーブルデータを抽出 (罫線なし対応)
+            tables = page.extract_tables(table_settings={
+                "vertical_strategy": "text",
+                "horizontal_strategy": "text"
+            })
+            if tables:
+                for table in tables:
+                    all_table_rows.extend(table)
             
-            if not page_text:
-                continue
+            # 【貼り付け2用】ページ全体のテキストを抽出 (大きい文字も逃さない)
+            page_text = page.extract_text()
+            if page_text:
+                all_text_lines.extend(page_text.split('\n'))
 
-            # 抽出したテキストを1行ずつExcelに書き込む
-            lines = page_text.split('\n')
-            for line in lines:
-                # 1列目 (A列) に行データを書き込む
-                ws.cell(row=current_row, column=1, value=line)
-                current_row += 1
-                
-            # ページ間に空行を1行入れる (見やすくするため)
+            # ページ間に区切りを入れる
             if page_number < len(pdf.pages):
-                current_row += 1
+                all_table_rows.append(["-" * 10, f"ページ {page_number+1}", "-" * 10])
+                all_text_lines.append(f"--- ページ {page_number+1} ---")
 
-    # --- ▲▲ ここまでロジックを大幅に変更 ▲▲ ---
 
-    # データを書き込めなかった場合
-    if current_row == 1:
-        ws.cell(row=1, column=1, value="PDFからテキストを抽出できませんでした。")
+    # --- データをExcelに書き込み ---
+
+    # 1. 「貼り付け1」にテーブルデータを書き込む
+    if not all_table_rows:
+        ws1.cell(row=1, column=1, value="テーブルデータを抽出できませんでした。")
+    else:
+        for r_idx, row_data in enumerate(all_table_rows, start=1):
+            if row_data:
+                for c_idx, cell_data in enumerate(row_data, start=1):
+                    cell_value = cell_data if cell_data is not None else ""
+                    ws1.cell(row=r_idx, column=c_idx, value=cell_value)
+
+    # 2. 「貼り付け2」に全テキストデータを書き込む
+    if not all_text_lines:
+        ws2.cell(row=1, column=1, value="PDFからテキストを抽出できませんでした。")
+    else:
+        for r_idx, line in enumerate(all_text_lines, start=1):
+            ws2.cell(row=r_idx, column=1, value=line)
 
     # 変更をバイトデータとして保存
     output_excel = io.BytesIO()
