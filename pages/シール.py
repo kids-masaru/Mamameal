@@ -34,10 +34,9 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
 
     
     # --- ▼▼ 処理1: 【貼り付け1】OCRによる抽出 ▼▼ ---
-    # (大きな文字が画像化されている場合に対応)
+    # (★この部分は変更なし。前回修正のまま最大4列)
     ws1_current_row = 1
     try:
-        # 1. PDF(バイトデータ)を画像のリストに変換
         images = convert_from_bytes(pdf_bytes_io.getvalue())
         
         if not images:
@@ -47,21 +46,16 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
             ws1_current_row += 1
             
             for i, page_image in enumerate(images, 1):
-                # 2. 画像から日本語テキストを抽出 (lang='jpn')
                 ocr_text = pytesseract.image_to_string(page_image, lang='jpn', config='--psm 6')
                 
                 ws1.cell(row=ws1_current_row, column=1, value=f"--- ページ {i} (OCR) ---")
                 ws1_current_row += 1
                 
                 if ocr_text:
-                    # --- ▼▼ ここから修正 (貼り付け1) ▼▼ ---
-                    # テキストを改行（\n）でリストに分割
                     lines = ocr_text.split('\n')
                     
                     for line in lines:
                         if line.strip(): # 空白行は無視
-                            # 1行（line）をスペースで分割して単語のリストにする
-                            # (例: "単語1 単語2 単語3 単語4" -> ["単語1", "単語2", "単語3", "単語4"])
                             words = line.split() 
                             
                             # 分割した単語を A, B, C, D 列に書き込む (最大4列)
@@ -71,7 +65,6 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
                                 ws1.cell(row=ws1_current_row, column=col_idx, value=word)
                             
                             ws1_current_row += 1 # 1行書くごとに行番号を増やす
-                    # --- ▲▲ ここまで修正 (貼り付け1) ▲▲ ---
                 else:
                     ws1.cell(row=ws1_current_row, column=1, value="(このページではOCRで文字を認識できませんでした)")
                     ws1_current_row += 1
@@ -105,10 +98,9 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
                                 # 1行（line）をスペースで分割して単語のリストにする
                                 words = line.split() 
 
-                                # 分割した単語を A, B, C, D 列に書き込む (最大4列)
+                                # 分割した単語を A, B, C... 列に書き込む (★列数制限なし)
                                 for col_idx, word in enumerate(words, 1):
-                                    if col_idx > 4: # 4列目 (D列) まで
-                                        break
+                                    # if col_idx > 4: break # ← 4列制限を削除
                                     ws2.cell(row=ws2_current_row, column=col_idx, value=word)
                                 
                                 ws2_current_row += 1 # 1行書くごとに行番号を増やす
