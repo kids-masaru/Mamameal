@@ -54,9 +54,25 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
                 ws1_current_row += 1
                 
                 if ocr_text:
-                    for line in ocr_text.split('\n'):
-                        ws1.cell(row=ws1_current_row, column=1, value=line)
-                        ws1_current_row += 1
+                    # --- ▼▼ ここから修正 (貼り付け1) ▼▼ ---
+                    # テキストを改行（\n）でリストに分割し、空白行を除外
+                    lines_raw = ocr_text.split('\n')
+                    lines = [line for line in lines_raw if line.strip()]
+                    
+                    # 4要素（4列）を1行として書き込む
+                    num_lines = len(lines)
+                    for i in range(0, num_lines, 4):
+                        c1 = lines[i] if i < num_lines else None
+                        c2 = lines[i+1] if (i+1) < num_lines else None
+                        c3 = lines[i+2] if (i+2) < num_lines else None
+                        c4 = lines[i+3] if (i+3) < num_lines else None
+                        
+                        ws1.cell(row=ws1_current_row, column=1, value=c1)
+                        ws1.cell(row=ws1_current_row, column=2, value=c2)
+                        ws1.cell(row=ws1_current_row, column=3, value=c3)
+                        ws1.cell(row=ws1_current_row, column=4, value=c4)
+                        ws1_current_row += 1 # 1行（4列）書くごとに行番号を増やす
+                    # --- ▲▲ ここまで修正 (貼り付け1) ▲▲ ---
                 else:
                     ws1.cell(row=ws1_current_row, column=1, value="(このページではOCRで文字を認識できませんでした)")
                     ws1_current_row += 1
@@ -71,7 +87,7 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     try:
         with pdfplumber.open(pdf_bytes_io) as pdf:
             if not pdf.pages:
-                 ws2.cell(row=1, column=1, value="PDFにページがありません。")
+                ws2.cell(row=1, column=1, value="PDFにページがありません。")
             else:
                 for page_number, page in enumerate(pdf.pages, 1):
                     page_text = page.extract_text() # レイアウトなしのシンプルな抽出
@@ -80,15 +96,26 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
                     ws2_current_row += 1
                     
                     if page_text:
-                        # --- ▼▼ ここから修正 ▼▼ ---
-                        # テキストを改行（\n）でリストに分割
-                        lines = page_text.split('\n')
+                        # --- ▼▼ ここから修正 (貼り付け2) ▼▼ ---
+                        # テキストを改行（\n）でリストに分割し、空白行を除外
+                        lines_raw = page_text.split('\n')
+                        lines = [line for line in lines_raw if line.strip()]
                         
-                        # 1行ずつループして、別々のセル（行）に書き込む
-                        for line in lines:
-                            ws2.cell(row=ws2_current_row, column=1, value=line)
-                            ws2_current_row += 1 # 1行書くごとに行番号を増やす
-                        # --- ▲▲ ここまで修正 ▲▲ ---
+                        # 4要素（4列）を1行として書き込む
+                        num_lines = len(lines)
+                        for i in range(0, num_lines, 4):
+                            # 4つのデータを取得（足りない場合はNoneになる）
+                            c1 = lines[i] if i < num_lines else None
+                            c2 = lines[i+1] if (i+1) < num_lines else None
+                            c3 = lines[i+2] if (i+2) < num_lines else None
+                            c4 = lines[i+3] if (i+3) < num_lines else None
+                            
+                            ws2.cell(row=ws2_current_row, column=1, value=c1)
+                            ws2.cell(row=ws2_current_row, column=2, value=c2)
+                            ws2.cell(row=ws2_current_row, column=3, value=c3)
+                            ws2.cell(row=ws2_current_row, column=4, value=c4)
+                            ws2_current_row += 1 # 1行（4列）書くごとに行番号を増やす
+                        # --- ▲▲ ここまで修正 (貼り付け2) ▲▲ ---
                     else:
                         ws2.cell(row=ws2_current_row, column=1, value="(このページではテキストを抽出できませんでした)")
                         ws2_current_row += 1
