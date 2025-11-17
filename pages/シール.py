@@ -48,7 +48,6 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
             
             for i, page_image in enumerate(images, 1):
                 # 2. 画像から日本語テキストを抽出 (lang='jpn')
-                # tesseract_layout=6 は、ページ全体を均一なテキストブロックとして扱う設定
                 ocr_text = pytesseract.image_to_string(page_image, lang='jpn', config='--psm 6')
                 
                 ws1.cell(row=ws1_current_row, column=1, value=f"--- ページ {i} (OCR) ---")
@@ -63,14 +62,11 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
                     ws1_current_row += 1
 
     except Exception as e:
-        # PDFが画像変換に対応していない場合などのエラー
         ws1.cell(row=1, column=1, value=f"OCR処理中にエラーが発生しました: {str(e)}")
-
     # --- ▲▲ 処理1: OCR 完了 ▲▲ ---
 
 
     # --- ▼▼ 処理2: 【貼り付け2】従来のテキスト抽出 ▼▼ ---
-    # (小さな文字のレイアウト保持に優れる)
     ws2_current_row = 1
     try:
         with pdfplumber.open(pdf_bytes_io) as pdf:
@@ -84,8 +80,15 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
                     ws2_current_row += 1
                     
                     if page_text:
-                        ws2.cell(row=ws2_current_row, column=1, value=page_text)
-                        ws2_current_row += 1
+                        # --- ▼▼ ここから修正 ▼▼ ---
+                        # テキストを改行（\n）でリストに分割
+                        lines = page_text.split('\n')
+                        
+                        # 1行ずつループして、別々のセル（行）に書き込む
+                        for line in lines:
+                            ws2.cell(row=ws2_current_row, column=1, value=line)
+                            ws2_current_row += 1 # 1行書くごとに行番号を増やす
+                        # --- ▲▲ ここまで修正 ▲▲ ---
                     else:
                         ws2.cell(row=ws2_current_row, column=1, value="(このページではテキストを抽出できませんでした)")
                         ws2_current_row += 1
