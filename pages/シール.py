@@ -4,6 +4,8 @@ import os
 from openpyxl import load_workbook
 import pdfplumber
 
+# st.set_page_config は削除 (streamlit_app.py で設定済みのため)
+
 # --- シール/その他PDF処理関数 ---
 def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     """
@@ -59,11 +61,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# サイドバーのリンクは main_app (streamlit_app.py) が自動で生成するので、
-# ここで st.sidebar... を書く必要はありません。
+# --- ▼▼ ここからサイドバー ▼▼ ---
+# すべてのページで同じメニューを表示
+st.sidebar.title("メニュー")
+st.sidebar.page_link("streamlit_app.py", label="数出表 変換", icon="📄")
+st.sidebar.page_link("pages/シール.py", label="シール貼付 変換", icon="🏷️")
+st.sidebar.page_link("pages/マスタ設定.py", label="マスタ設定", icon="⚙️")
+show_debug = st.sidebar.checkbox("デバッグ情報を表示", value=False)
+# --- ▲▲ ここまでサイドバー ▲▲ ---
+
 
 st.markdown('<p class="custom-title">シール貼付 PDF変換ツール</p>', unsafe_allow_html=True)
-show_debug = st.sidebar.checkbox("デバッグ情報を表示", value=False)
+# show_debug は上のサイドバーコードに移動したので、元の行は削除
+
 uploaded_pdf = st.file_uploader("処理するシールPDFファイルをアップロードしてください", type="pdf", label_visibility="collapsed")
 
 if uploaded_pdf is not None:
