@@ -55,23 +55,22 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
                 
                 if ocr_text:
                     # --- ▼▼ ここから修正 (貼り付け1) ▼▼ ---
-                    # テキストを改行（\n）でリストに分割し、空白行を除外
-                    lines_raw = ocr_text.split('\n')
-                    lines = [line for line in lines_raw if line.strip()]
+                    # テキストを改行（\n）でリストに分割
+                    lines = ocr_text.split('\n')
                     
-                    # 4要素（4列）を1行として書き込む
-                    num_lines = len(lines)
-                    for i in range(0, num_lines, 4):
-                        c1 = lines[i] if i < num_lines else None
-                        c2 = lines[i+1] if (i+1) < num_lines else None
-                        c3 = lines[i+2] if (i+2) < num_lines else None
-                        c4 = lines[i+3] if (i+3) < num_lines else None
-                        
-                        ws1.cell(row=ws1_current_row, column=1, value=c1)
-                        ws1.cell(row=ws1_current_row, column=2, value=c2)
-                        ws1.cell(row=ws1_current_row, column=3, value=c3)
-                        ws1.cell(row=ws1_current_row, column=4, value=c4)
-                        ws1_current_row += 1 # 1行（4列）書くごとに行番号を増やす
+                    for line in lines:
+                        if line.strip(): # 空白行は無視
+                            # 1行（line）をスペースで分割して単語のリストにする
+                            # (例: "単語1 単語2 単語3 単語4" -> ["単語1", "単語2", "単語3", "単語4"])
+                            words = line.split() 
+                            
+                            # 分割した単語を A, B, C, D 列に書き込む (最大4列)
+                            for col_idx, word in enumerate(words, 1):
+                                if col_idx > 4: # 4列目 (D列) まで
+                                    break
+                                ws1.cell(row=ws1_current_row, column=col_idx, value=word)
+                            
+                            ws1_current_row += 1 # 1行書くごとに行番号を増やす
                     # --- ▲▲ ここまで修正 (貼り付け1) ▲▲ ---
                 else:
                     ws1.cell(row=ws1_current_row, column=1, value="(このページではOCRで文字を認識できませんでした)")
@@ -97,24 +96,22 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
                     
                     if page_text:
                         # --- ▼▼ ここから修正 (貼り付け2) ▼▼ ---
-                        # テキストを改行（\n）でリストに分割し、空白行を除外
-                        lines_raw = page_text.split('\n')
-                        lines = [line for line in lines_raw if line.strip()]
+                        # テキストを改行（\n）でリストに分割
+                        lines = page_text.split('\n')
                         
-                        # 4要素（4列）を1行として書き込む
-                        num_lines = len(lines)
-                        for i in range(0, num_lines, 4):
-                            # 4つのデータを取得（足りない場合はNoneになる）
-                            c1 = lines[i] if i < num_lines else None
-                            c2 = lines[i+1] if (i+1) < num_lines else None
-                            c3 = lines[i+2] if (i+2) < num_lines else None
-                            c4 = lines[i+3] if (i+3) < num_lines else None
-                            
-                            ws2.cell(row=ws2_current_row, column=1, value=c1)
-                            ws2.cell(row=ws2_current_row, column=2, value=c2)
-                            ws2.cell(row=ws2_current_row, column=3, value=c3)
-                            ws2.cell(row=ws2_current_row, column=4, value=c4)
-                            ws2_current_row += 1 # 1行（4列）書くごとに行番号を増やす
+                        # 1行ずつループして、スペースで分割し、別々のセル（列）に書き込む
+                        for line in lines:
+                            if line.strip(): # 空白行は無視
+                                # 1行（line）をスペースで分割して単語のリストにする
+                                words = line.split() 
+
+                                # 分割した単語を A, B, C, D 列に書き込む (最大4列)
+                                for col_idx, word in enumerate(words, 1):
+                                    if col_idx > 4: # 4列目 (D列) まで
+                                        break
+                                    ws2.cell(row=ws2_current_row, column=col_idx, value=word)
+                                
+                                ws2_current_row += 1 # 1行書くごとに行番号を増やす
                         # --- ▲▲ ここまで修正 (貼り付け2) ▲▲ ---
                     else:
                         ws2.cell(row=ws2_current_row, column=1, value="(このページではテキストを抽出できませんでした)")
