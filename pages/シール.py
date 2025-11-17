@@ -9,7 +9,7 @@ import pdfplumber
 # --- シール/その他PDF処理関数 ---
 def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     """
-    数出表以外のPDFを処理し、既存のseal.xlsxの最初のシートに全テーブルデータを貼り付ける
+    PDFの全テキストを抽出し、既存のseal.xlsxの最初のシートに貼り付ける
     """
     # 既存のseal.xlsxを読み込む
     wb = load_workbook(existing_seal_path)
@@ -21,53 +21,36 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     if ws.max_row > 0:
         ws.delete_rows(1, ws.max_row)
 
-    all_rows_data = []
+    current_row = 1 # Excelに書き込む現在の行番号
     
-    # pdfplumberでPDFを開き、全ページの全テーブルを抽出
+    # --- ▼▼ ここからロジックを大幅に変更 ▼▼ ---
+    # extract_tables() の代わりに extract_text(layout=True) を使用
+    
     with pdfplumber.open(pdf_bytes_io) as pdf:
-        for page in pdf.pages:
-            # --- ▼▼ 修正点 ▼▼ ---
-            # "strategy": "text" を正しい場所（table_settingsの外）に指定
-            tables = page.extract_tables(table_settings={
-                "vertical_strategy": "text",
-                "horizontal_strategy": "text"
-            })
+        for page_number, page in enumerate(pdf.pages, 1):
             
-            # もし上記でテーブルが見つからなかった場合、"text" 戦略を試す
-            if not tables:
-                 tables = page.extract_tables(table_settings={
-                    "vertical_strategy": "text",
-                    "horizontal_strategy": "text",
-                    "snap_tolerance": 3, # 少しのズレを許容
-                })
-
-            # --- ▲▲ 修正点 ▲▲ ---
+            # layout=True で、見た目のレイアウト（インデント等）を保持したままテキストを抽出
+            page_text = page.extract_text(layout=True)
             
-            if tables:
-                for table in tables:
-                    # tableはネストされたリスト (list of lists)
-                    all_rows_data.extend(table)
-    
-    # 抽出したデータをシートに書き込む
-    if not all_rows_data:
-        # 最終手段として、テーブルが見つからない場合はページ全体のテキストを抽出
-        ws.cell(row=1, column=1, value="テーブル抽出失敗。ページ全体のテキストを抽出します。")
-        current_row = 2
-        with pdfplumber.open(pdf_bytes_io) as pdf_text:
-             for page in pdf_text.pages:
-                 page_text = page.extract_text()
-                 if page_text:
-                     for line in page_text.split('\n'):
-                         ws.cell(row=current_row, column=1, value=line)
-                         current_row += 1
+            if not page_text:
+                continue
 
-    else:
-        for r_idx, row_data in enumerate(all_rows_data, start=1):
-            if row_data: # 行データが空でないことを確認
-                for c_idx, cell_data in enumerate(row_data, start=1):
-                    # セルデータがNoneの場合は空文字に変換
-                    cell_value = cell_data if cell_data is not None else ""
-                    ws.cell(row=r_idx, column=c_idx, value=cell_value)
+            # 抽出したテキストを1行ずつExcelに書き込む
+            lines = page_text.split('\n')
+            for line in lines:
+                # 1列目 (A列) に行データを書き込む
+                ws.cell(row=current_row, column=1, value=line)
+                current_row += 1
+                
+            # ページ間に空行を1行入れる (見やすくするため)
+            if page_number < len(pdf.pages):
+                current_row += 1
+
+    # --- ▲▲ ここまでロジックを大幅に変更 ▲▲ ---
+
+    # データを書き込めなかった場合
+    if current_row == 1:
+        ws.cell(row=1, column=1, value="PDFからテキストを抽出できませんでした。")
 
     # 変更をバイトデータとして保存
     output_excel = io.BytesIO()
@@ -119,7 +102,6 @@ if uploaded_pdf is not None:
         
         st.success(f"✅ 処理が完了しました！")
         
-        # --- ▼▼ 修正点 (ファイル名) ▼▼ ---
         # アップロードされたPDFの元のファイル名（拡張子なし）を取得
         original_pdf_name = os.path.splitext(uploaded_pdf.name)[0]
         
@@ -129,7 +111,6 @@ if uploaded_pdf is not None:
             file_name=f"seal_{original_pdf_name}.xlsx", # ファイル名を動的に変更
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        # --- ▲▲ 修正点 (ファイル名) ▲▲ ---
         
     except Exception as e:
         st.error(f"シール/その他PDF処理中にエラーが発生しました: {str(e)}")
