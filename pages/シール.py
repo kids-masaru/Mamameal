@@ -4,12 +4,6 @@ import os
 from openpyxl import load_workbook
 import pdfplumber
 
-st.set_page_config(
-    page_title="シール貼付 変換",
-    page_icon="./static/icons/android-chrome-192.png", # アイコンパスは必要に応じて調整
-    layout="centered",
-)
-
 # --- シール/その他PDF処理関数 ---
 def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     """
@@ -65,10 +59,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.sidebar.title("メニュー")
-st.sidebar.page_link("streamlit_app.py", label="数出表 変換", icon="📄")
-st.sidebar.page_link("pages/シール.py", label="シール貼付 変換", icon="🏷️")
-st.sidebar.page_link("pages/マスタ設定.py", label="マスタ設定", icon="⚙️")
+# サイドバーのリンクは main_app (streamlit_app.py) が自動で生成するので、
+# ここで st.sidebar... を書く必要はありません。
 
 st.markdown('<p class="custom-title">シール貼付 PDF変換ツール</p>', unsafe_allow_html=True)
 show_debug = st.sidebar.checkbox("デバッグ情報を表示", value=False)
