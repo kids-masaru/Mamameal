@@ -4,94 +4,103 @@ import os
 from openpyxl import load_workbook
 import pdfplumber
 
-# st.set_page_config は削除 (streamlit_app.py で設定済みのため)
+# --- ▼▼ 新しくインポート ▼▼ ---
+import pytesseract
+from pdf2image import convert_from_bytes
+# --- ▲▲ 新しくインポート ▲▲ ---
+
 
 # --- シール/その他PDF処理関数 ---
 def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     """
     seal.xlsxを読み込み、シートを2枚に分けてPDFデータを貼り付ける
-    - 貼り付け1: 全文字の生データ (フォントサイズ確認用)
-    - 貼り付け2: シンプルな全テキスト (基本情報)
+    - 貼り付け1: OCRによる画像認識テキスト (★大きな文字用)
+    - 貼り付け2: 従来のテキストデータ (★小さい文字用)
     """
     # 既存のseal.xlsxを読み込む
     wb = load_workbook(existing_seal_path)
     
     # --- シートの準備 ---
-    
-    # 1. 1枚目のシートを「貼り付け1」にリネーム
     ws1 = wb.worksheets[0]
-    ws1.title = "貼り付け1"
+    ws1.title = "貼り付け1" # OCR結果
     
-    # 2. 2枚目のシート「貼り付け2」を作成（または取得）
     if "貼り付け2" in wb.sheetnames:
-        ws2 = wb["貼り付け2"]
+        ws2 = wb["貼り付け2"] # 従来のテキスト抽出
     else:
-        # 2番目の位置 (index=1) にシートを作成
         ws2 = wb.create_sheet(title="貼り付け2", index=1)
 
-    # 3. 両方のシートの既存データをクリア
-    if ws1.max_row > 0:
-        ws1.delete_rows(1, ws1.max_row)
-    if ws2.max_row > 0:
-        ws2.delete_rows(1, ws2.max_row)
+    if ws1.max_row > 0: ws1.delete_rows(1, ws1.max_row)
+    if ws2.max_row > 0: ws2.delete_rows(1, ws2.max_row)
 
-    # --- PDFからのデータ抽出 ---
     
-    all_char_data = []  # 貼り付け1用 (文字の生データ)
-    all_text_lines = [] # 貼り付け2用 (シンプルなテキスト)
+    # --- ▼▼ 処理1: 【貼り付け1】OCRによる抽出 ▼▼ ---
+    # (大きな文字が画像化されている場合に対応)
+    ws1_current_row = 1
+    try:
+        # 1. PDF(バイトデータ)を画像のリストに変換
+        images = convert_from_bytes(pdf_bytes_io.getvalue())
+        
+        if not images:
+            ws1.cell(row=1, column=1, value="PDFを画像に変換できませんでした。")
+        else:
+            ws1.cell(row=1, column=1, value="--- OCR抽出開始 ---")
+            ws1_current_row += 1
+            
+            for i, page_image in enumerate(images, 1):
+                # 2. 画像から日本語テキストを抽出 (lang='jpn')
+                # tesseract_layout=6 は、ページ全体を均一なテキストブロックとして扱う設定
+                ocr_text = pytesseract.image_to_string(page_image, lang='jpn', config='--psm 6')
+                
+                ws1.cell(row=ws1_current_row, column=1, value=f"--- ページ {i} (OCR) ---")
+                ws1_current_row += 1
+                
+                if ocr_text:
+                    for line in ocr_text.split('\n'):
+                        ws1.cell(row=ws1_current_row, column=1, value=line)
+                        ws1_current_row += 1
+                else:
+                    ws1.cell(row=ws1_current_row, column=1, value="(このページではOCRで文字を認識できませんでした)")
+                    ws1_current_row += 1
+
+    except Exception as e:
+        # PDFが画像変換に対応していない場合などのエラー
+        ws1.cell(row=1, column=1, value=f"OCR処理中にエラーが発生しました: {str(e)}")
+
+    # --- ▲▲ 処理1: OCR 完了 ▲▲ ---
+
+
+    # --- ▼▼ 処理2: 【貼り付け2】従来のテキスト抽出 ▼▼ ---
+    # (小さな文字のレイアウト保持に優れる)
+    ws2_current_row = 1
+    try:
+        with pdfplumber.open(pdf_bytes_io) as pdf:
+            if not pdf.pages:
+                 ws2.cell(row=1, column=1, value="PDFにページがありません。")
+            else:
+                for page_number, page in enumerate(pdf.pages, 1):
+                    page_text = page.extract_text() # レイアウトなしのシンプルな抽出
+                    
+                    ws2.cell(row=ws2_current_row, column=1, value=f"--- ページ {page_number} (テキスト) ---")
+                    ws2_current_row += 1
+                    
+                    if page_text:
+                        ws2.cell(row=ws2_current_row, column=1, value=page_text)
+                        ws2_current_row += 1
+                    else:
+                        ws2.cell(row=ws2_current_row, column=1, value="(このページではテキストを抽出できませんでした)")
+                        ws2_current_row += 1
     
-    # 貼り付け1用のヘッダーを追加
-    all_char_data.append(["Text", "FontSize", "x0", "y0"])
-
-    with pdfplumber.open(pdf_bytes_io) as pdf:
-        for page_number, page in enumerate(pdf.pages, 1):
-            
-            # 【貼り付け1用】全文字の生データを抽出 (page.chars)
-            # これで「大きな文字」がテキストとして存在するか確認
-            for char in page.chars:
-                all_char_data.append([
-                    char.get("text"),
-                    round(char.get("size"), 2) if char.get("size") else 0, # フォントサイズ
-                    round(char.get("x0"), 2), # X座標
-                    round(char.get("y0"), 2)  # Y座標
-                ])
-            
-            # 【貼り付け2用】ページ全体のシンプルなテキストを抽出 (extract_text)
-            page_text = page.extract_text()
-            if page_text:
-                all_text_lines.extend(page_text.split('\n'))
-
-            # ページ間に区切りを入れる
-            if page_number < len(pdf.pages):
-                all_char_data.append(["-" * 10, f"Page {page_number+1}", "-" * 10, "-" * 10])
-                all_text_lines.append(f"--- ページ {page_number+1} ---")
-
-
-    # --- データをExcelに書き込み ---
-
-    # 1. 「貼り付け1」にテーブルデータを書き込む
-    if len(all_char_data) <= 1: # ヘッダーのみの場合
-        ws1.cell(row=1, column=1, value="文字データを抽出できませんでした。")
-    else:
-        for r_idx, row_data in enumerate(all_char_data, start=1):
-            if row_data:
-                for c_idx, cell_data in enumerate(row_data, start=1):
-                    cell_value = cell_data if cell_data is not None else ""
-                    ws1.cell(row=r_idx, column=c_idx, value=cell_value)
-
-    # 2. 「貼り付け2」に全テキストデータを書き込む
-    if not all_text_lines:
-        ws2.cell(row=1, column=1, value="PDFからテキストを抽出できませんでした。")
-    else:
-        for r_idx, line in enumerate(all_text_lines, start=1):
-            ws2.cell(row=r_idx, column=1, value=line)
+    except Exception as e:
+        ws2.cell(row=1, column=1, value=f"テキスト抽出中にエラーが発生しました: {str(e)}")
+        
+    # --- ▲▲ 処理2: テキスト抽出 完了 ▲▲ ---
 
     # 変更をバイトデータとして保存
     output_excel = io.BytesIO()
     wb.save(output_excel)
     return output_excel.getvalue()
 
-# --- ページ表示 ---
+# --- ページ表示 (変更なし) ---
 
 st.markdown("""
     <style>
@@ -105,14 +114,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- ▼▼ ここからサイドバー ▼▼ ---
-# すべてのページで同じメニューを表示
 st.sidebar.title("メニュー")
 st.sidebar.page_link("streamlit_app.py", label="数出表 変換", icon="📄")
 st.sidebar.page_link("pages/シール.py", label="シール貼付 変換", icon="🏷️")
 st.sidebar.page_link("pages/マスタ設定.py", label="マスタ設定", icon="⚙️")
 show_debug = st.sidebar.checkbox("デバッグ情報を表示", value=False)
 # --- ▲▲ ここまでサイドバー ▲▲ ---
-
 
 st.markdown('<p class="custom-title">シール貼付 PDF変換ツール</p>', unsafe_allow_html=True)
 
@@ -130,13 +137,12 @@ if uploaded_pdf is not None:
         st.stop()
     
     try:
-        with st.spinner(f"'{seal_template_path}' にPDFデータを書き込み中..."):
+        with st.spinner(f"OCR処理とテキスト抽出を実行中... (時間がかかる場合があります)"):
             # 新しい関数を呼び出し、変更されたExcelのバイトデータを取得
             modified_seal_bytes = process_other_pdf_to_seal_template(pdf_bytes_io, seal_template_path)
         
         st.success(f"✅ 処理が完了しました！")
         
-        # アップロードされたPDFの元のファイル名（拡張子なし）を取得
         original_pdf_name = os.path.splitext(uploaded_pdf.name)[0]
         
         st.download_button(
