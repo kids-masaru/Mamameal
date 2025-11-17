@@ -27,12 +27,20 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     with pdfplumber.open(pdf_bytes_io) as pdf:
         for page in pdf.pages:
             # --- ▼▼ 修正点 ▼▼ ---
-            # strategy="text" を指定し、罫線がないPDFのテーブル抽出を強化
+            # "strategy": "text" を正しい場所（table_settingsの外）に指定
             tables = page.extract_tables(table_settings={
                 "vertical_strategy": "text",
-                "horizontal_strategy": "text",
-                "strategy": "text" # 念のため strategy も text に指定
+                "horizontal_strategy": "text"
             })
+            
+            # もし上記でテーブルが見つからなかった場合、"text" 戦略を試す
+            if not tables:
+                 tables = page.extract_tables(table_settings={
+                    "vertical_strategy": "text",
+                    "horizontal_strategy": "text",
+                    "snap_tolerance": 3, # 少しのズレを許容
+                })
+
             # --- ▲▲ 修正点 ▲▲ ---
             
             if tables:
@@ -42,7 +50,17 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     
     # 抽出したデータをシートに書き込む
     if not all_rows_data:
-        ws.cell(row=1, column=1, value="PDFからテーブルデータを抽出できませんでした。")
+        # 最終手段として、テーブルが見つからない場合はページ全体のテキストを抽出
+        ws.cell(row=1, column=1, value="テーブル抽出失敗。ページ全体のテキストを抽出します。")
+        current_row = 2
+        with pdfplumber.open(pdf_bytes_io) as pdf_text:
+             for page in pdf_text.pages:
+                 page_text = page.extract_text()
+                 if page_text:
+                     for line in page_text.split('\n'):
+                         ws.cell(row=current_row, column=1, value=line)
+                         current_row += 1
+
     else:
         for r_idx, row_data in enumerate(all_rows_data, start=1):
             if row_data: # 行データが空でないことを確認
