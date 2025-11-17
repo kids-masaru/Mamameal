@@ -10,8 +10,8 @@ import pdfplumber
 def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     """
     seal.xlsxを読み込み、シートを2枚に分けてPDFデータを貼り付ける
-    - 貼り付け1 (1枚目のシート): テーブルデータ（小さい文字）
-    - 貼り付け2 (2枚目のシート): 全テキストデータ（大きい文字も含む）
+    - 貼り付け1: 全文字の生データ (フォントサイズ確認用)
+    - 貼り付け2: シンプルな全テキスト (基本情報)
     """
     # 既存のseal.xlsxを読み込む
     wb = load_workbook(existing_seal_path)
@@ -37,39 +37,43 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
 
     # --- PDFからのデータ抽出 ---
     
-    all_table_rows = [] # 貼り付け1用
-    all_text_lines = [] # 貼り付け2用
+    all_char_data = []  # 貼り付け1用 (文字の生データ)
+    all_text_lines = [] # 貼り付け2用 (シンプルなテキスト)
     
+    # 貼り付け1用のヘッダーを追加
+    all_char_data.append(["Text", "FontSize", "x0", "y0"])
+
     with pdfplumber.open(pdf_bytes_io) as pdf:
         for page_number, page in enumerate(pdf.pages, 1):
             
-            # 【貼り付け1用】テーブルデータを抽出 (罫線なし対応)
-            tables = page.extract_tables(table_settings={
-                "vertical_strategy": "text",
-                "horizontal_strategy": "text"
-            })
-            if tables:
-                for table in tables:
-                    all_table_rows.extend(table)
+            # 【貼り付け1用】全文字の生データを抽出 (page.chars)
+            # これで「大きな文字」がテキストとして存在するか確認
+            for char in page.chars:
+                all_char_data.append([
+                    char.get("text"),
+                    round(char.get("size"), 2) if char.get("size") else 0, # フォントサイズ
+                    round(char.get("x0"), 2), # X座標
+                    round(char.get("y0"), 2)  # Y座標
+                ])
             
-            # 【貼り付け2用】ページ全体のテキストを抽出 (大きい文字も逃さない)
+            # 【貼り付け2用】ページ全体のシンプルなテキストを抽出 (extract_text)
             page_text = page.extract_text()
             if page_text:
                 all_text_lines.extend(page_text.split('\n'))
 
             # ページ間に区切りを入れる
             if page_number < len(pdf.pages):
-                all_table_rows.append(["-" * 10, f"ページ {page_number+1}", "-" * 10])
+                all_char_data.append(["-" * 10, f"Page {page_number+1}", "-" * 10, "-" * 10])
                 all_text_lines.append(f"--- ページ {page_number+1} ---")
 
 
     # --- データをExcelに書き込み ---
 
     # 1. 「貼り付け1」にテーブルデータを書き込む
-    if not all_table_rows:
-        ws1.cell(row=1, column=1, value="テーブルデータを抽出できませんでした。")
+    if len(all_char_data) <= 1: # ヘッダーのみの場合
+        ws1.cell(row=1, column=1, value="文字データを抽出できませんでした。")
     else:
-        for r_idx, row_data in enumerate(all_table_rows, start=1):
+        for r_idx, row_data in enumerate(all_char_data, start=1):
             if row_data:
                 for c_idx, cell_data in enumerate(row_data, start=1):
                     cell_value = cell_data if cell_data is not None else ""
