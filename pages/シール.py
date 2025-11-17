@@ -26,7 +26,15 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     # pdfplumberでPDFを開き、全ページの全テーブルを抽出
     with pdfplumber.open(pdf_bytes_io) as pdf:
         for page in pdf.pages:
-            tables = page.extract_tables()
+            # --- ▼▼ 修正点 ▼▼ ---
+            # strategy="text" を指定し、罫線がないPDFのテーブル抽出を強化
+            tables = page.extract_tables(table_settings={
+                "vertical_strategy": "text",
+                "horizontal_strategy": "text",
+                "strategy": "text" # 念のため strategy も text に指定
+            })
+            # --- ▲▲ 修正点 ▲▲ ---
+            
             if tables:
                 for table in tables:
                     # tableはネストされたリスト (list of lists)
@@ -72,7 +80,6 @@ show_debug = st.sidebar.checkbox("デバッグ情報を表示", value=False)
 
 
 st.markdown('<p class="custom-title">シール貼付 PDF変換ツール</p>', unsafe_allow_html=True)
-# show_debug は上のサイドバーコードに移動したので、元の行は削除
 
 uploaded_pdf = st.file_uploader("処理するシールPDFファイルをアップロードしてください", type="pdf", label_visibility="collapsed")
 
@@ -93,12 +100,19 @@ if uploaded_pdf is not None:
             modified_seal_bytes = process_other_pdf_to_seal_template(pdf_bytes_io, seal_template_path)
         
         st.success(f"✅ 処理が完了しました！")
+        
+        # --- ▼▼ 修正点 (ファイル名) ▼▼ ---
+        # アップロードされたPDFの元のファイル名（拡張子なし）を取得
+        original_pdf_name = os.path.splitext(uploaded_pdf.name)[0]
+        
         st.download_button(
-            label=f"▼ {seal_template_path} ダウンロード",
+            label=f"▼ seal_{original_pdf_name}.xlsx ダウンロード",
             data=modified_seal_bytes,
-            file_name="seal.xlsx", # ファイル名は 'seal.xlsx' のまま
+            file_name=f"seal_{original_pdf_name}.xlsx", # ファイル名を動的に変更
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+        # --- ▲▲ 修正点 (ファイル名) ▲▲ ---
+        
     except Exception as e:
         st.error(f"シール/その他PDF処理中にエラーが発生しました: {str(e)}")
         if show_debug:
