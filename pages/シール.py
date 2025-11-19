@@ -14,8 +14,8 @@ from pdf2image import convert_from_bytes
 def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     """
     seal.xlsxを読み込み、シートを2枚に分けてPDFデータを貼り付ける
-    - 貼り付け1: OCRによる画像認識テキスト (★大きな文字用)
-    - 貼り付け2: 従来のテキストデータ (★小さい文字用)
+    - 貼り付け1: OCRによる画像認識テキスト (E列まで)
+    - 貼り付け2: 従来のテキストデータ (M列まで)
     """
     # 既存のseal.xlsxを読み込む
     wb = load_workbook(existing_seal_path)
@@ -29,12 +29,14 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
     else:
         ws2 = wb.create_sheet(title="貼り付け2", index=1)
 
+    # 【注意】 delete_rowsは行ごと削除するため、もしテンプレートのF列/O列にあらかじめ
+    # 関数が入っている場合、それらも消えてしまう可能性があります。
+    # テンプレートの作りによりますが、関数が消える場合は「データ範囲のみクリア」する処理への変更が必要です。
     if ws1.max_row > 0: ws1.delete_rows(1, ws1.max_row)
     if ws2.max_row > 0: ws2.delete_rows(1, ws2.max_row)
 
     
     # --- ▼▼ 処理1: 【貼り付け1】OCRによる抽出 ▼▼ ---
-    # (★この部分は変更なし。前回修正のまま最大4列)
     ws1_current_row = 1
     try:
         images = convert_from_bytes(pdf_bytes_io.getvalue())
@@ -58,9 +60,10 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
                         if line.strip(): # 空白行は無視
                             words = line.split() 
                             
-                            # 分割した単語を A, B, C, D 列に書き込む (最大4列)
+                            # 分割した単語を書き込む
                             for col_idx, word in enumerate(words, 1):
-                                if col_idx > 4: # 4列目 (D列) まで
+                                # ▼▼▼ 修正箇所：E列(5)まで ▼▼▼
+                                if col_idx > 5: # E列より右(F列以降)に関数があるためここでストップ
                                     break
                                 ws1.cell(row=ws1_current_row, column=col_idx, value=word)
                             
@@ -88,23 +91,20 @@ def process_other_pdf_to_seal_template(pdf_bytes_io, existing_seal_path):
                     ws2_current_row += 1
                     
                     if page_text:
-                        # --- ▼▼ ここから修正 (貼り付け2) ▼▼ ---
-                        # テキストを改行（\n）でリストに分割
                         lines = page_text.split('\n')
                         
-                        # 1行ずつループして、スペースで分割し、別々のセル（列）に書き込む
                         for line in lines:
                             if line.strip(): # 空白行は無視
-                                # 1行（line）をスペースで分割して単語のリストにする
                                 words = line.split() 
 
-                                # 分割した単語を A, B, C... 列に書き込む (★列数制限なし)
+                                # 分割した単語を書き込む
                                 for col_idx, word in enumerate(words, 1):
-                                    # if col_idx > 4: break # ← 4列制限を削除
+                                    # ▼▼▼ 修正箇所：M列(13)まで ▼▼▼
+                                    if col_idx > 13: # M列より右(N, O列以降)に関数があるためここでストップ
+                                        break
                                     ws2.cell(row=ws2_current_row, column=col_idx, value=word)
                                 
                                 ws2_current_row += 1 # 1行書くごとに行番号を増やす
-                        # --- ▲▲ ここまで修正 (貼り付け2) ▲▲ ---
                     else:
                         ws2.cell(row=ws2_current_row, column=1, value="(このページではテキストを抽出できませんでした)")
                         ws2_current_row += 1
