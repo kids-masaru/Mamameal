@@ -37,7 +37,7 @@ except Exception as e:
 load_dotenv()
 
 # Configure page
-icon_path = os.path.join("static", "icons", "android-chrome-192.png")
+icon_path = os.path.join("static", "icons", "app-icon.jpg")
 page_icon = icon_path if os.path.exists(icon_path) else "🍱"
 
 st.set_page_config(
